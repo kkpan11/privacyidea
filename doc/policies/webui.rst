@@ -189,6 +189,19 @@ type: ``string``
 Defines the default tokentype when enrolling a new token in the WebUI. This
 tokentype will be selected when entering the enrollment dialog.
 
+.. index:: Default Container Type
+.. _policy_default_container_type:
+
+default_container_type
+~~~~~~~~~~~~~~~~~~~~~~
+
+type: ``string``
+
+Defines the default container type when creating a new container in the WebUI. This container type will be selected
+when entering the container create dialog. If this policy is not set, the default type is `Generic`.
+
+New in version 3.11
+
 .. index:: Wizard, Token wizard
 .. _policy_token_wizard:
 
@@ -475,3 +488,38 @@ type: ``string``
 
 With this policy you may specify a custom privacy statement link which is displayed
 in the WebUI baseline.
+
+.. _policy_rss_feeds:
+
+rss_feeds
+~~~~~~~~~
+
+type: str
+
+This policy defines which RSS feeds are displayed in the Web UI to the users or administrators.
+The input format is like ``'Feed Name':'URL'-'Another Feed Name':'URL'``. The feed name will be displayed as the title
+for the feed defined by the URL. Feed name and url shall be wrapped in single quotes and separated by a colon.
+Multiple feeds can be separated by a dash. Note that commas are not allowed in policy actions at all.
+
+The default is:
+
+.. code-block::
+
+    'Community News':'https://community.privacyidea.org/c/news.rss'-
+    'privacyIDEA News':'https://privacyidea.org/feed'-
+    'NetKnights News':'https://netknights.it/en/feed'
+
+This way you can display news feeds from the community, privacyIDEA and NetKnights informing you about new
+updates or other critical information.
+You can use your own internal news feeds, if you want to provide your own information to users.
+
+.. _policy_rss_age:
+
+rss_age
+~~~~~~~
+
+type: int
+
+This defines the age of the displayed news feeds. The default is 180 days. You can specify a different age in days.
+
+.. _note:: If you specify the age 0, then the UI tab "News" will be hidden.

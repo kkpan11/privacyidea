@@ -43,6 +43,7 @@ import datetime
 import functools
 import json
 import logging
+import netaddr
 import re
 import traceback
 from urllib.parse import quote
@@ -50,17 +51,15 @@ from urllib.parse import quote
 from flask import g, current_app, make_response
 
 from privacyidea.api.lib.utils import get_all_params
-from privacyidea.lib import lazy_gettext
+from privacyidea.lib import _, lazy_gettext
 from privacyidea.lib.auth import ROLE
-from privacyidea.lib.config import get_multichallenge_enrollable_tokentypes, get_token_class
-from privacyidea.lib.config import get_privacyidea_node
+from privacyidea.lib.config import get_multichallenge_enrollable_tokentypes, get_token_class, get_privacyidea_node
 from privacyidea.lib.crypto import Sign
 from privacyidea.lib.error import PolicyError, ValidateError
+from privacyidea.lib.info.rss import FETCH_DAYS
 from privacyidea.lib.machine import get_auth_items
-from privacyidea.lib.policy import DEFAULT_ANDROID_APP_URL, DEFAULT_IOS_APP_URL
-from privacyidea.lib.policy import DEFAULT_PREFERRED_CLIENT_MODE_LIST
-from privacyidea.lib.policy import Match
-from privacyidea.lib.policy import SCOPE, ACTION, AUTOASSIGNVALUE, AUTHORIZED
+from privacyidea.lib.policy import (DEFAULT_ANDROID_APP_URL, DEFAULT_IOS_APP_URL, DEFAULT_PREFERRED_CLIENT_MODE_LIST,
+                                    SCOPE, ACTION, AUTOASSIGNVALUE, AUTHORIZED, Match)
 from privacyidea.lib.realm import get_default_realm
 from privacyidea.lib.subscriptions import (subscription_status,
                                            get_subscription,
@@ -69,10 +68,10 @@ from privacyidea.lib.subscriptions import (subscription_status,
                                            EXPIRE_MESSAGE)
 from privacyidea.lib.token import get_tokens, assign_token, get_realms_of_token, get_one_token, init_token
 from privacyidea.lib.tokenclass import ROLLOUTSTATE
+from privacyidea.lib.tokens.passkeytoken import PasskeyTokenClass
 from privacyidea.lib.user import User
 from privacyidea.lib.utils import create_img, get_version
-from .prepolicy import check_max_token_user, check_max_token_realm, fido2_enroll
-from ...lib.tokens.passkeytoken import PasskeyTokenClass
+from .prepolicy import check_max_token_user, check_max_token_realm, fido2_enroll, rss_age
 
 log = logging.getLogger(__name__)
 
@@ -82,6 +81,7 @@ DEFAULT_LOGOUT_TIME = 120
 DEFAULT_AUDIT_PAGE_SIZE = 10
 DEFAULT_PAGE_SIZE = 15
 DEFAULT_TOKENTYPE = "hotp"
+DEFAULT_CONTAINER_TYPE = "generic"
 DEFAULT_TIMEOUT_ACTION = "lockscreen"
 DEFAULT_POLICY_TEMPLATE_URL = "https://raw.githubusercontent.com/privacyidea/" \
                               "policy-templates/master/templates/"
@@ -609,6 +609,8 @@ def get_webui_settings(request, response):
                                               user=username, realm=realm).any()
         default_tokentype_pol = Match.generic(g, scope=SCOPE.WEBUI, action=ACTION.DEFAULT_TOKENTYPE,
                                               user=username, realm=realm).action_values(unique=True)
+        default_container_type_pol = Match.generic(g, scope=SCOPE.WEBUI, action=ACTION.DEFAULT_CONTAINER_TYPE,
+                                                   user=username, realm=realm).action_values(unique=True)
         show_seed = Match.generic(g, scope=SCOPE.WEBUI, action=ACTION.SHOW_SEED,
                                   user=username, realm=realm).any()
         show_node = Match.generic(g, scope=SCOPE.WEBUI, action=ACTION.SHOW_NODE, realm=realm).any()
@@ -631,6 +633,7 @@ def get_webui_settings(request, response):
         user_page_size = DEFAULT_PAGE_SIZE
         require_description = list(require_description.keys())
         default_tokentype = DEFAULT_TOKENTYPE
+        default_container_type = DEFAULT_CONTAINER_TYPE
         logout_redirect_url = ""
         if len(audit_page_size_pol) == 1:
             audit_page_size = int(list(audit_page_size_pol)[0])
@@ -640,6 +643,8 @@ def get_webui_settings(request, response):
             user_page_size = int(list(user_page_size_pol)[0])
         if len(default_tokentype_pol) == 1:
             default_tokentype = list(default_tokentype_pol)[0]
+        if len(default_container_type_pol) == 1:
+            default_container_type = list(default_container_type_pol)[0]
         if len(logout_redirect_url_pol) == 1:
             logout_redirect_url = list(logout_redirect_url_pol)[0]
 
@@ -668,6 +673,7 @@ def get_webui_settings(request, response):
         content["result"]["value"]["user_page_size"] = user_page_size
         content["result"]["value"]["policy_template_url"] = policy_template_url
         content["result"]["value"]["default_tokentype"] = default_tokentype
+        content["result"]["value"]["default_container_type"] = default_container_type
         content["result"]["value"]["user_details"] = len(user_details_pol) > 0
         content["result"]["value"]["token_wizard"] = token_wizard
         content["result"]["value"]["token_wizard_2nd"] = token_wizard_2nd
@@ -689,6 +695,9 @@ def get_webui_settings(request, response):
         content["result"]["value"]["qr_image_custom"] = qr_image_custom
         content["result"]["value"]["logout_redirect_url"] = logout_redirect_url
         content["result"]["value"]["require_description"] = require_description
+        rss_age(request, None)
+        content["result"]["value"]["rss_age"] = request.all_data.get("rss_age", FETCH_DAYS)
+
         if role == ROLE.ADMIN:
             # Add a support mailto, for administrators with systemwrite rights.
             subscriptions = get_subscription("privacyidea")
